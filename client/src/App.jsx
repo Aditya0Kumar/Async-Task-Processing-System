@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const API_URL = 'http://localhost:5000/api/entries';
+const API_URL = 'https://async-task-processing-system.onrender.com/api/entries';
 
 function App() {
   const [entries, setEntries] = useState([]);
