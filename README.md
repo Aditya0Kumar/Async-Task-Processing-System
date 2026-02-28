@@ -1,107 +1,137 @@
 # Async Task Processing System
 
-A full-stack application that demonstrates asynchronous background job processing with real-time status tracking using a queue-based worker architecture.
+<div align="center">
+  <img src="https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white" alt="Node.js" />
+  <img src="https://img.shields.io/badge/Express.js-000000?style=for-the-badge&logo=express&logoColor=white" alt="Express.js" />
+  <img src="https://img.shields.io/badge/MongoDB-4EA94B?style=for-the-badge&logo=mongodb&logoColor=white" alt="MongoDB" />
+  <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" alt="Redis" />
+  <img src="https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB" alt="React" />
+  <img src="https://img.shields.io/badge/Vite-646CFF?style=for-the-badge&logo=vite&logoColor=white" alt="Vite" />
+</div>
 
-## Features List
-### Core Features
-- ✔ **Create background job**
-- ✔ **Priority-based processing (HIGH > MEDIUM > LOW)**
-- ✔ **Real-time status tracking**
-- ✔ **Progress percentage**
-- ✔ **Final result storage**
-- ✔ **Failure handling with retries**
-- ✔ **Idempotent worker**
-- ✔ **Non-blocking API**
-- ✔ **Separate worker process**
+<br />
 
-### Concurrency & Consistency
-- ✔ **BullMQ job locking** prevents duplicate processing
-- ✔ **MongoDB atomic updates** per job
-- ✔ Worker safe to run multiple instances
-- ✔ Retry with **exponential backoff**
-- ✔ System remains consistent on API restart
+A robust and scalable full-stack application that demonstrates **asynchronous background job processing** with real-time status tracking. This project employs a decoupled, queue-driven worker architecture to guarantee fault tolerance, extreme concurrency, and horizontal scalability.
+
+---
+
+## Key Features
+
+### Core Operations
+- **Create Background Jobs:** Offload heavy lifting to background processes via an asynchronous API.
+- **Priority-Based Processing:** Strictly respects job priorities (`HIGH` > `MEDIUM` > `LOW`).
+- **Real-Time Tracking:** Frontend polls and automatically updates job progress and status seamlessly.
+- **Final Result Storage:** Persists processing output to the database.
+- **Failure Handling & Retries:** Automatic retries for simulated errors (e.g., maximum 3 attempts) coupled with exponential backoff strategy.
+
+### Concurrency & Scalability
+- **BullMQ Job Locking:** Ensures comprehensive idempotency. Jobs are locked and processed exclusively by one worker to avoid duplicate executions.
+- **MongoDB Atomic Updates:** Enforces robust job state lifecycle transitions.
+- **Highly Decoupled:** The API purely delegates to the Queue and never processes a job, making it completely non-blocking.
+- **Fault-Tolerant:** API server downtime or restarts do not impact or abort actively processing asynchronous jobs.
 
 ---
 
 ## High-Level Architecture
 
-The system is designed with a true decoupled, queue-driven architecture, ensuring fault tolerance, concurrency, and horizontal scalability.
+The system segregates API routing, Queue orchestration, and Worker execution to maximize throughput and isolation.
 
-### 1️ API Server (Node + Express)
-**Responsible for:** Creating jobs, storing initial state in MongoDB, sending jobs to the BullMQ queue, and providing status APIs to the client. *It does NOT process jobs and remains completely non-blocking.*
+```mermaid
+graph TD
+    %% Define Nodes
+    Client["React Frontend"]
+    API["Node + Express API"]
+    Mongo[("MongoDB")]
+    Redis[("Redis + BullMQ Queue")]
+    Worker["Background Worker (Node)"]
 
-### 2️ Redis + BullMQ (Queue Layer)
-**Handles:** Job storage, priority ordering (HIGH vs LOW), retry-on-failure orchestration, job locking (guaranteeing single-worker execution), and concurrency safety.
+    %% Connections
+    Client -- "1. POST /api/entries\n(Create Job)" --> API
+    API -- "2. Save Initial State\n(PENDING)" --> Mongo
+    API -- "3. Enqueue Job\n(Priority)" --> Redis
+    API -. "4. Return 201 Created\n(Non-blocking)" .-> Client
+    
+    Worker -- "5. Dequeue Job\n(Locks Job)" --> Redis
+    Worker -- "6. Update Progress\n& Status" --> Mongo
+    Worker -- "7. Handle Retries\n(On Failure)" --> Redis
+    
+    Client -. "8. GET /api/entries\n(Poll Status)" .-> API
+    API -. "Fetch Updated State" .-> Mongo
+```
 
-### 3️ Worker Process (Separate Node Process)
-**Responsible for:** Consuming jobs asynchronously from the queue, updating the job lifecycle (`PENDING` → `PROCESSING` → `COMPLETED`/`FAILED`), updating progress %, and simulating handling errors & retries. It runs in a completely separate terminal from the API Server.
-
-### 4️ MongoDB
-**Stores persistent state:** Job title, priority, status, progress, and result.
-
-### 5️ Frontend (React + Vite)
-**Displays:** A minimalist UI featuring a Create Job form, priority selector, job list, dynamic status badges, and animated progress bars. Uses polling every 2 seconds to reflect real-time updates from the background.
+1. **API Server:** Receives creation requests, persists the `PENDING` job into MongoDB, orchestrates the job payload into BullMQ, and immediately responds to the client. Maintains zero execution overhead.
+2. **Queue Layer (Redis & BullMQ):** Maintains job queues, strictly orders execution based on `HIGH`/`LOW` priority mapping, ensures atomic single-worker distribution locking, and dictates automated retry/backoff parameters.
+3. **Worker Node:** A completely isolated background process that queries Redis for work, updates progress states directly to MongoDB (`PROCESSING` to `COMPLETED`), and simulates realistic failure/retry flows gracefully.
 
 ---
 
-## Full Job Lifecycle
-
-1. **Step 1 – User Creates Job:** User enters Task title and Priority (LOW/MEDIUM/HIGH). The API saves the job in MongoDB (`status: PENDING`, `progress: 0`), adds the job to BullMQ with priority, and returns a response immediately *(⚡ Non-blocking API)*.
-2. **Step 2 – Queue Behavior:** BullMQ orders jobs by priority (`HIGH` processed first) and ensures single-worker-per-job locking.
-3. **Step 3 – Worker Picks Job:** The worker checks idempotency (skips if already `COMPLETED`). Transitions to `PROCESSING`, increments progress progressively (`25%` -> `50%` -> `100%`), and finally marks `COMPLETED` with a success result string.
-4. **Step 4 – Failure Handling:** To demonstrate robustness, the worker has a simulated 20% failure rate. If it fails, BullMQ retries automatically up to 3 attempts with an exponential backoff. After max attempts, the job state changes correctly to `FAILED`.
-5. **Step 5 – Frontend Updates:** The React app polls `GET /entries` every 2 seconds, dynamically updating the status badge, progress bar, and final result.
-
----
-
-## Setup Instructions
+## Setup & Execution 
 
 ### Prerequisites
-You must have **MongoDB** (running locally or via Atlas) and **Redis** (running locally or via Upstash) available.
-Ensure your `.env` in the `server` directory has your credentials.
+- **Node.js** (v18+ recommended)
+- **MongoDB** (Local instance or MongoDB Atlas)
+- **Redis** (Local instance or Upstash)
 
-**1. Start the API server**
+### 1. Environment Variables Configuration
+Navigate to the `server/` directory and configure the `.env` file with your credentials:
+
+```env
+PORT=5000
+MONGODB_URI=your_mongodb_connection_string
+REDIS_URL=your_redis_connection_string
+```
+
+### 2. Start the API Server
+The API Server handles frontend routes and delegates tasks to the message broker.
+
 ```bash
 cd server
 npm install
 npm run dev
 ```
 
-**2. Start the Worker process**
-*This runs in completely separate terminal to prove architectural decoupling.*
+### 3. Start the Dedicated Worker Process
+Open a **new, entirely separate terminal window**. This proves architectural segregation.
+
 ```bash
 cd server
 npm run worker
 ```
 
-**3. Start the Frontend UI**
+### 4. Start the React Frontend
+Open a **third terminal window**.
+
 ```bash
 cd client
 npm install
 npm run dev
 ```
-Open `http://localhost:5173`.
+Navigate to: `http://localhost:5173`
 
 ---
 
-## Demo Scenarios (For Reviewers)
+## API Documentation
 
-Use these tests to verify the robustness of the system geometry.
+The lightweight RESTful API interfaces purely for state transition dispatchment and state retrieval.
 
-**Demo 1 – Normal flow**
-- Setup: Have API, Worker, and Frontend running.
-- Action: Create a normal job.
-- Result: Watch lifecycle safely transition to `COMPLETED` alongside real-time progress bars.
+| Endpoint | Method | Description |
+| :--- | :---: | :--- |
+| `/api/entries` | `POST` | Safely creates a brand new asynchronous task and delegates it to the queue. |
+| `/api/entries` | `GET` | Fetches a list of all past and current processing jobs alongside their statuses. |
+| `/api/entries/:id` | `GET` | Retrieves real-time granularity status and completion metrics of a solitary job. |
 
-**Demo 2 – Priority Routing**
-- Action: Rapidly create three `LOW` priority jobs, followed immediately by one `HIGH` priority job.
-- Result: Watch the Worker bypass the `LOW` jobs and immediately process the `HIGH` job first, as orchestrated strictly by the Queue layer.
+---
 
-**Demo 3 – Failure & Retries**
-- Action: Create multiple jobs. A simulated 20% failure rate is active.
-- Result: Watch a job fail internally. BullMQ will hold the job, wait 2 seconds, and retry. If it persistently fails 3 times, the UI correctly transitions the job state to `FAILED`.
+## Demo Scenarios (Testing the Architecture)
 
-**Demo 4 – API Restart Tolerance**
-- Action: Create a job, let it begin `PROCESSING`.
-- Disturbance: Immediately kill (`Ctrl+C`) the API server terminal.
-- Result: The UI stops updating, *but the separate Worker terminal finishes the job securely in the background*. Restart the API terminal, and the UI will fetch the job properly as `COMPLETED`. This proves true fault-tolerant decoupling.
+**1. Priority Routing Test**
+- Create 3 `LOW` priority jobs simultaneously, and immediately spawn a `HIGH` priority job.
+- *Expected Output:* The independent Worker intercepts the `HIGH` job queue strictly before resuming iteration overhead of all preceding `LOW` jobs. 
+
+**2. Simulation of Cascading Failures**
+- Spin up jobs normally. The backend simulates a pseudo-random fail-rate (roughly 20%).
+- *Expected Output:* BullMQ will automatically pause operations relative to the failed task, impose exponential backoff, and autonomously resurrect the task upwards of 3 total attempts until forced rejection to `FAILED`.
+
+**3. API Restart Fortitude Test**
+- Orchestrate a task. While it transitions to `PROCESSING`, execute `Ctrl+C` in the Node API Server terminal.
+- *Expected Output:* The UI updates halt, but the decoupled Worker process completely finishes the operation organically. Upon Node Server revival, the UI retrieves the validated `COMPLETED` record seamlessly, proving genuine fault tolerance.
