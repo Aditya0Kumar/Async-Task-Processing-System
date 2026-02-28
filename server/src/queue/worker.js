@@ -4,6 +4,15 @@ import dotenv from 'dotenv';
 import { redisConfig, queueName } from '../config/redis.js';
 import { Entry } from '../models/entry.js';
 
+
+import express from "express";
+
+const app = express();
+app.get("/", (req, res) => res.send("Worker running"));
+app.listen(process.env.PORT || 10000, () => {
+  console.log("Worker HTTP server started");
+});
+
 dotenv.config();
 
 // Connect to MongoDB for the worker process
